@@ -1,0 +1,284 @@
+---
+title: "Logistic Regression in R Heart Disease Data"
+author: "Sachin Sharma"
+date: "12/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Importing libraries
+```{r}
+library(htmlTable)
+library(tidyverse)
+library(ggplot2)
+library(rvest)
+library(naniar)
+
+
+```
+
+# Reading data from URL 
+```{r}
+
+
+url <- "http://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data"
+
+df <- read.csv(url,  header = FALSE)
+
+head(df)
+
+```
+# Here we can see that the column names are not clear and we need to put the column names instead of default column names V1,V2 .. etc... 
+
+```{r}
+colnames(df)<- c("age","sex","cp","trestbps","chol","fbs","restecg","thalach","exang","oldpeak","slope","ca",
+"thal","hd") 
+```
+
+
+
+```{r}
+head(df)
+
+
+```
+# Checking the structure of the data, where we can see that sex and cp ( chest pain ) are numeric where it should be categorical as per the data and we have to the check the missing values in the data  
+```{r}
+str(df)
+```
+
+# Now lets do some checking of the missing values and cleaning of the data  : 
+```{r}
+sum(is.na(df))
+```
+```{r}
+vis_miss(df)
+```
+# Checking columnwise missing values in the data : 
+
+```{r}
+sapply(df, function(x)sum(is.na(x)))
+```
+
+
+
+# With the help of above three methods , we can see that there is no missing values in the data set  : 
+# Now we will change numeric values of sex column and cp column to character factors 
+```{r}
+df$sex = factor(df$sex, levels = c(0,1),
+                             labels = c("F","M"))
+
+df$cp <- as.factor(df$cp)
+df$fbs <- as.factor(df$fbs)
+df$restecg <- as.factor(df$restecg)
+df$exang <- as.factor(df$exang)
+
+df$slope <- as.factor(df$slope)
+
+df$ca <- as.factor(df$ca)
+
+df$thal <- as.factor(df$thal)
+
+df$hd <- ifelse(df$hd == 0, yes = "Healthy", no = "Unhealthy")
+
+df$hd <- as.factor(df$hd)
+
+df[df == "?"] <- NA
+
+head(df)
+```
+
+```{r}
+sum(is.na(df))
+
+str(df)
+
+# filling missing values in a column with mean of the data 
+
+
+
+
+df$ca = ifelse(is.na(df$ca), ave(df$ca, FUN = function(x)mean(x, na.rm = TRUE)),
+                  df$ca)
+
+
+df$thal <- as.numeric(df$thal)
+
+str(df)
+df$thal = ifelse(is.na(df$thal), ave(df$thal, FUN = function(x)mean(x, na.rm = TRUE)),
+                  df$thal)
+
+
+list_na <- colnames(df)[ apply(df, 2, anyNA) ]
+list_na
+
+df$thal <- as.factor(df$thal)
+
+df$ca <- as.factor(df$ca)
+
+str(df)
+```
+# Now we will check whether healthy and diseased samples come from each gender (male and female), if not , then we have to remove that sex from the data which is not useful for this model 
+
+```{r}
+xtabs(~hd+sex, data = df)
+```
+
+# Hence , we can see that both sex have healthy and unhealthy data  , similarly we can check with other factors 
+
+```{r}
+xtabs(~hd+cp,data = df)
+```
+```{r}
+xtabs(~hd+fbs, data = df)
+```
+
+```{r}
+xtabs(~hd+restecg, data = df)
+```
+# Now lets do logistic regression 
+```{r}
+logistic <- glm(hd~sex, data = df, family = "binomial")
+summary(logistic)
+
+```
+# NOw we will use all the variables for this model
+
+# Lets us first split data into train and test data : 
+
+# with the help of library caTools 
+```{r}
+
+library(caTools)
+split = sample.split(df$hd, SplitRatio = 0.8)
+
+train_data = subset(df, split == TRUE )
+test_data = subset(df, split == FALSE )
+view(train_data)
+
+nrow(train_data)
+nrow(test_data)
+
+```
+
+
+```{r}
+logisticnew <- glm(hd~.,data = train_data, family = "binomial")
+
+summary(logisticnew)
+
+```
+# From the above stats we can see that variables : slope, sex, cp, ca, thal are factors which play important role in the model 
+
+# Hence we can use only these variables and remove other : 
+
+# Now our model formulae will be : 
+
+```{r}
+
+logistic_m <- glm(hd~sex+slope+cp+ca+thal, family = "binomial", data = train_data)
+
+
+summary(logistic_m)
+
+```
+# Prediction :
+
+```{r}
+
+p1 <- predict(logistic_m, train_data, type = "response")
+
+head(p1)
+```
+# Lets compare it with train data set 
+
+```{r}
+head(train_data)
+pred1 <- ifelse(p1>0.5, 1,0)
+
+table(pred=pred1,Actual = train_data$hd)
+
+```
+```{r}
+p2 <- predict(logistic_m, test_data, type = "response")
+pred2 <- ifelse(p2>0.5, 1,0)
+
+table(prediction=pred2,Actual = test_data$hd)
+
+```
+# Goodness of fit test 
+
+```{r}
+
+library(tinytex)
+with(logistic_m, pchisq(null.deviance-deviance, df.null-df.residual, lower.tail = F))
+
+
+```
+
+# The above p Value is 6.45 x 10^{-29} which is very less, hence our model is statistically very significant. 
+
+```{r}
+ll.null <- logistic$null.deviance/-2
+
+ll.proposed <- logisticnew$deviance/-2
+
+
+# Calculating the pseudo R^2
+(ll.null - ll.proposed)/ll.null
+
+
+# To calculate a p-value for that R^2 using a Chi-Square distribution 
+
+1-pchisq(2*(ll.proposed-ll.null), df = (length(logistic$coefficients)-1))
+
+
+```
+# Now plotting the graph, for the same we need new data.frame that contains probabilities of having heart disease along with the actual heart disease status 
+
+
+```{r}
+
+predicted.data <- data.frame(probability.of.hd = logistic$fitted.values,
+                             hd = df$hd)
+
+predicted.data
+
+```
+
+
+# Now sorting the dataframe from low probabilities to high probabilities 
+
+```{r}
+predicted.data <- predicted.data[order(predicted.data$probability.of.hd,
+                                       decreasing = FALSE),]
+
+
+
+```
+
+# Adding new column to dataframe that has the rank of each sample, from low probability to high probability 
+
+```{r}
+
+predicted.data$rank <- 1:nrow(predicted.data)
+
+predicted.data
+
+
+```
+
+```{r}
+library(ggplot2)
+library(cowplot)
+
+ggplot(data = predicted.data, aes(x = rank, y = probability.of.hd))+geom_point(aes(color=hd), alpha = 1, shape = 4, stroke = 2)+ xlab("Index")+ylab("Predicted probability of getting heart disease")
+```
+
+```{r}
+ggsave("heart_disease_probabilities.pdf")
+```
+
